@@ -18,7 +18,6 @@ public class Notebook {
     public Notebook(String title) {
         this();
         this.title = title;
-        this.content = "# " + title + "\n\n";
     }
 
     public String getId() {

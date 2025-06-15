@@ -20,11 +20,14 @@ public class MainActivity extends AppCompatActivity implements NotebookAdapter.O
     private RecyclerView notebooksRecyclerView;
     private NotebookAdapter notebookAdapter;
     private List<Notebook> notebooks = new ArrayList<>();
+    private DatabaseRepository databaseRepository;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        databaseRepository = new DatabaseRepository(this);
+        loadNotebooksFromDatabase();
 
         notebooksRecyclerView = findViewById(R.id.notebooksRecyclerView);
         notebooksRecyclerView.setLayoutManager(new LinearLayoutManager(this));
@@ -39,6 +42,15 @@ public class MainActivity extends AppCompatActivity implements NotebookAdapter.O
         exportPdfButton.setOnClickListener(v -> exportAllToPdf());
     }
 
+    private void loadNotebooksFromDatabase() {
+        new Thread(() -> {
+            List<Notebook> notebooksFromDb = databaseRepository.getAllNotebooks();
+            runOnUiThread(() -> {
+                notebookAdapter.updateNotebooks(notebooksFromDb);
+            });
+        }).start();
+    }
+
     private void showCreateNotebookDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle(R.string.create_notebook);
@@ -51,7 +63,10 @@ public class MainActivity extends AppCompatActivity implements NotebookAdapter.O
             String title = titleInput.getText().toString().trim();
             if (!title.isEmpty()) {
                 Notebook notebook = new Notebook(title);
-                notebookAdapter.addNotebook(notebook);
+                new Thread(() -> {
+                    databaseRepository.addNotebook(notebook);
+                    runOnUiThread(() -> notebookAdapter.addNotebook(notebook));
+                }).start();
             }
         });
         builder.setNegativeButton(R.string.cancel, null);

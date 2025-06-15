@@ -2,12 +2,8 @@ package upvictoria.pm_may_ago_2025.iti_271415.pi1u1.notion;
 
 import android.content.Intent;
 import android.os.Bundle;
-import android.text.Editable;
-import android.text.SpannableStringBuilder;
-import android.text.Spanned;
-import android.text.TextWatcher;
 import android.util.Log;
-import android.view.KeyEvent;
+import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
@@ -16,64 +12,284 @@ import android.widget.ImageButton;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.drawerlayout.widget.DrawerLayout;
 
 import com.google.android.material.navigation.NavigationView;
+import com.google.android.material.textfield.TextInputEditText;
+
+import java.util.List;
 
 import io.noties.markwon.Markwon;
-import io.noties.markwon.editor.MarkwonEditor;
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin;
 import io.noties.markwon.ext.tasklist.TaskListPlugin;
 
 public class NotebookActivity extends AppCompatActivity implements NavigationView.OnNavigationItemSelectedListener {
 
+    // Componentes de UI
     private EditText markdownEditor;
-    private Markwon markwon;
-    private MarkwonEditor markwonEditor;
-    private boolean isShiftPressed = false;
-    private boolean isPreviewMode = false;
     private Button previewButton;
-    private int lastRenderPosition = 0;
     private DrawerLayout drawerLayout;
     private NavigationView navigationView;
+    private Toolbar toolbar;
+
+    // Markdown
+    private Markwon markwon;
+    private boolean isPreviewMode = false;
     private String originalMarkdown;
+
+    // Datos
+    private DatabaseRepository databaseRepository;
+    private String currentNotebookId;
+    private String currentPageId;
+    private boolean isNewPage = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_notebook);
 
         try {
-            setContentView(R.layout.activity_notebook);
+            // 1. Inicializar vistas
+            initViews();
 
-            Intent intent = getIntent();
-            if (intent == null || !intent.hasExtra("notebook_id") || !intent.hasExtra("notebook_title")) {
-                Log.e("NotebookActivity", "Datos del cuaderno no recibidos");
-                showErrorAndFinish("Datos del cuaderno no recibidos");
-                return;
+            // 2. Configurar repositorio y obtener datos iniciales
+            databaseRepository = new DatabaseRepository(this);
+            currentNotebookId = getIntent().getStringExtra("notebook_id");
+
+            // 3. Manejar estado guardado
+            if (savedInstanceState != null) {
+                restoreState(savedInstanceState);
+            } else {
+                initNewNotebookState();
             }
 
-            initMarkdownEditor();
+            // 4. Configurar Markwon
+            setupMarkwon();
 
-            String notebookId = intent.getStringExtra("notebook_id");
-            String notebookTitle = intent.getStringExtra("notebook_title");
-            originalMarkdown = "# " + notebookTitle + "\n\n";
-            markdownEditor.setText(originalMarkdown);
+            // 5. Cargar la página inicial
+            loadInitialPage();
 
-            if (notebookTitle == null || notebookTitle.isEmpty()) {
-                Log.e("NotebookActivity", "Título del cuaderno vacío");
-                showErrorAndFinish("Título del cuaderno no válido");
-                return;
-            }
-
-            initToolbar(notebookTitle);
+            // 6. Configurar toolbar y navegación
+            initToolbar(getIntent().getStringExtra("notebook_title"));
             initNavigationDrawer();
-            setupPreviewButton();
 
         } catch (Exception e) {
             Log.e("NotebookActivity", "Error en onCreate", e);
             showErrorAndFinish("Error crítico al iniciar: " + e.getMessage());
+        }
+    }
+
+    private void initViews() {
+        markdownEditor = findViewById(R.id.markdownEditor);
+        previewButton = findViewById(R.id.previewButton);
+        drawerLayout = findViewById(R.id.drawerLayout);
+        navigationView = findViewById(R.id.navigationView);
+        toolbar = findViewById(R.id.toolbar);
+
+        previewButton.setOnClickListener(v -> togglePreview());
+    }
+
+    private void restoreState(Bundle savedInstanceState) {
+        currentPageId = savedInstanceState.getString("currentPageId");
+        isPreviewMode = savedInstanceState.getBoolean("isPreviewMode");
+        originalMarkdown = savedInstanceState.getString("originalMarkdown");
+    }
+
+    private void initNewNotebookState() {
+        Intent intent = getIntent();
+        String notebookTitle = intent.getStringExtra("notebook_title");
+        originalMarkdown = "# " + notebookTitle + "\n\n";
+    }
+
+    private void setupMarkwon() {
+        markwon = Markwon.builder(this)
+                .usePlugin(StrikethroughPlugin.create())
+                .usePlugin(TaskListPlugin.create(this))
+                .build();
+    }
+
+    private void loadInitialPage() {
+        new Thread(() -> {
+            List<Page> pages = databaseRepository.getPagesByNotebook(currentNotebookId);
+            runOnUiThread(() -> {
+                if (pages.isEmpty()) {
+                    createFirstPage();
+                } else {
+                    loadPage(pages.get(0));
+                }
+            });
+        }).start();
+    }
+
+    private void createFirstPage() {
+        Page newPage = new Page(getIntent().getStringExtra("notebook_title"), currentNotebookId);
+        databaseRepository.addPage(newPage);
+        currentPageId = newPage.getId();
+        markdownEditor.setText(newPage.getContent());
+    }
+
+    private void loadPage(Page page) {
+        currentPageId = page.getId();
+        isNewPage = false;
+
+        if (isPreviewMode) {
+            originalMarkdown = page.getContent();
+            String processed = prepareForPreview(originalMarkdown);
+            markdownEditor.setText(markwon.toMarkdown(processed));
+        } else {
+            markdownEditor.setText(page.getContent());
+        }
+    }
+
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putString("currentNotebookId", currentNotebookId);
+        outState.putString("currentPageId", currentPageId);
+        outState.putBoolean("isPreviewMode", isPreviewMode);
+        outState.putString("originalMarkdown", originalMarkdown);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        saveCurrentPage(null);
+    }
+
+    private void initToolbar(String title) {
+        setSupportActionBar(toolbar);
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setTitle(title);
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+            getSupportActionBar().setHomeAsUpIndicator(R.drawable.ic_menu);
+        }
+    }
+
+    private void initNavigationDrawer() {
+        navigationView.setNavigationItemSelectedListener(this);
+        loadPagesIntoNavigationDrawer();
+
+        ImageButton menuButton = findViewById(R.id.menuButton);
+        if (menuButton != null) {
+            menuButton.setOnClickListener(v -> drawerLayout.openDrawer(navigationView));
+        }
+    }
+
+    private void loadPagesIntoNavigationDrawer() {
+        new Thread(() -> {
+            List<Page> pages = databaseRepository.getPagesByNotebook(currentNotebookId);
+            runOnUiThread(() -> {
+                Menu menu = navigationView.getMenu();
+                menu.clear();
+
+                for (int i = 0; i < pages.size(); i++) {
+                    menu.add(0, i, i, pages.get(i).getTitle())
+                            .setCheckable(true);
+                }
+
+                menu.add(0, -1, pages.size(), "Nueva página");
+            });
+        }).start();
+    }
+
+    @Override
+    public boolean onNavigationItemSelected(@NonNull MenuItem item) {
+        int id = item.getItemId();
+
+        saveCurrentPage(() -> {
+            if (id == -1) {
+                createNewPage();
+            } else {
+                loadPageById(id);
+            }
+        });
+
+        drawerLayout.closeDrawers();
+        return true;
+    }
+
+    private void createNewPage() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Nueva página");
+
+        View view = getLayoutInflater().inflate(R.layout.dialog_create_notebook, null);
+        TextInputEditText titleInput = view.findViewById(R.id.titleInput);
+
+        builder.setView(view);
+        builder.setPositiveButton("Crear", (dialog, which) -> {
+            String title = titleInput.getText().toString().trim();
+            if (!title.isEmpty()) {
+                Page newPage = new Page(title, currentNotebookId);
+                databaseRepository.addPage(newPage);
+                currentPageId = newPage.getId();
+                isNewPage = true;
+                markdownEditor.setText(newPage.getContent());
+                loadPagesIntoNavigationDrawer();
+                Toast.makeText(this, "Página creada", Toast.LENGTH_SHORT).show();
+            }
+        });
+        builder.setNegativeButton("Cancelar", null);
+        builder.show();
+    }
+
+    private void loadPageById(int position) {
+        new Thread(() -> {
+            List<Page> pages = databaseRepository.getPagesByNotebook(currentNotebookId);
+            if (position >= 0 && position < pages.size()) {
+                Page page = pages.get(position);
+                runOnUiThread(() -> loadPage(page));
+            }
+        }).start();
+    }
+
+    private void saveCurrentPage(Runnable onComplete) {
+        if (currentPageId == null || markdownEditor == null) {
+            if (onComplete != null) onComplete.run();
+            return;
+        }
+
+        new Thread(() -> {
+            String content = isPreviewMode ? originalMarkdown : markdownEditor.getText().toString();
+            Page page = new Page();
+            page.setId(currentPageId);
+            page.setContent(content);
+            page.setTitle(content.split("\n")[0].replace("#", "").trim());
+            page.setNotebookId(currentNotebookId);
+
+            databaseRepository.updatePage(page);
+            if (onComplete != null) runOnUiThread(onComplete);
+        }).start();
+    }
+
+    private void togglePreview() {
+        isPreviewMode = !isPreviewMode;
+
+        if (isPreviewMode) {
+            originalMarkdown = markdownEditor.getText().toString();
+            String processed = prepareForPreview(originalMarkdown);
+            markdownEditor.setText(markwon.toMarkdown(processed));
+            previewButton.setText(R.string.edit);
+        } else {
+            markdownEditor.setText(originalMarkdown);
+            previewButton.setText(R.string.preview);
+        }
+        enableEditing(!isPreviewMode);
+    }
+
+    private String prepareForPreview(String markdown) {
+        return markdown.replaceAll("(?<=\\S)\n", "\n\n");
+    }
+
+    private void enableEditing(boolean enable) {
+        markdownEditor.setFocusable(enable);
+        markdownEditor.setFocusableInTouchMode(enable);
+        markdownEditor.setCursorVisible(enable);
+        if (enable) {
+            markdownEditor.requestFocus();
+            markdownEditor.setSelection(markdownEditor.getText().length());
         }
     }
 
@@ -84,208 +300,6 @@ public class NotebookActivity extends AppCompatActivity implements NavigationVie
         });
     }
 
-    private void initToolbar(String title) {
-        Toolbar toolbar = findViewById(R.id.toolbar);
-        if (toolbar == null) {
-            showErrorAndFinish("Toolbar no encontrada");
-            return;
-        }
-
-        setSupportActionBar(toolbar);
-
-        if (getSupportActionBar() != null) {
-            getSupportActionBar().setTitle(title);
-            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-            getSupportActionBar().setHomeAsUpIndicator(R.drawable.ic_menu);
-            getSupportActionBar().setDisplayShowHomeEnabled(true);
-        }
-    }
-
-    private void initNavigationDrawer() {
-        drawerLayout = findViewById(R.id.drawerLayout);
-        navigationView = findViewById(R.id.navigationView);
-
-        if (drawerLayout == null || navigationView == null) {
-            Log.e("NotebookActivity", "Componentes de navegación no encontrados");
-            return;
-        }
-
-        navigationView.setNavigationItemSelectedListener(this);
-
-        ImageButton menuButton = findViewById(R.id.menuButton);
-        if (menuButton != null) {
-            menuButton.setOnClickListener(v -> drawerLayout.openDrawer(navigationView));
-        }
-    }
-
-    private void initMarkdownEditor() {
-        markdownEditor = findViewById(R.id.markdownEditor);
-        if (markdownEditor == null) {
-            showErrorAndFinish("Editor no encontrado");
-            return;
-        }
-
-        try {
-            markwon = Markwon.builder(this)
-                    .usePlugin(StrikethroughPlugin.create())
-                    .usePlugin(TaskListPlugin.create(this))
-                    .build();
-
-            //markwonEditor = MarkwonEditor.create(markwon);
-
-            String notebookTitle = getIntent().getStringExtra("notebook_title");
-            markdownEditor.setText("# " + notebookTitle + "\n\n");
-
-            //setupEditorListeners();
-        } catch (Exception e) {
-            Log.e("NotebookActivity", "Error al inicializar Markwon", e);
-            showErrorAndFinish("Error al configurar el editor");
-        }
-    }
-
-//    private void setupEditorListeners() {
-//        markdownEditor.setOnKeyListener((v, keyCode, event) -> {
-//            if (keyCode == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_UP) {
-//                processCurrentBlock();
-//                return true;
-//            }
-//            return false;
-//        });
-//
-//        markdownEditor.addTextChangedListener(new TextWatcher() {
-//            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-//            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
-//
-//            @Override
-//            public void afterTextChanged(Editable editable) {
-//                if (editable.toString().endsWith("```\n")) {
-//                    processCurrentBlock();
-//                }
-//            }
-//        });
-//    }
-
-    private void setupPreviewButton() {
-        previewButton = findViewById(R.id.previewButton);
-        if (previewButton == null) {
-            return;
-        }
-
-        previewButton.setOnClickListener(v -> togglePreview());
-    }
-
-    private void togglePreview() {
-        if (isPreviewMode) {
-            // Volver a modo edición
-            markdownEditor.setText(originalMarkdown);
-            previewButton.setText(R.string.preview);
-            enableEditing(true);
-        } else {
-            // Entrar en modo vista previa
-            originalMarkdown = cleanMarkdownContent(markdownEditor.getText().toString());
-            String processedMarkdown = prepareForPreview(originalMarkdown);
-
-            Spanned markdownSpanned = markwon.toMarkdown(processedMarkdown);
-            markdownEditor.setText(markdownSpanned);
-            previewButton.setText(R.string.edit);
-            enableEditing(false);
-        }
-        isPreviewMode = !isPreviewMode;
-    }
-
-    private String cleanMarkdownContent(String content) {
-        // 1. Normalizar espacios alrededor de formatos
-        content = content.replaceAll("\\*\\*(\\s+)", "**$1")
-                .replaceAll("(\\s+)\\*\\*", "$1**")
-                .replaceAll("\\*(\\s+)", "*$1")
-                .replaceAll("(\\s+)\\*", "$1*");
-
-        // 2. Limpiar espacios en saltos de línea
-        content = content.replaceAll("\\s+\\n", "\n")
-                .replaceAll("\n\\s+", "\n");
-
-        // 3. Asegurar doble espacio para saltos de línea simples
-        return content.replaceAll("(?<=\\S)\n", "  \n");
-    }
-
-    private String prepareForPreview(String markdown) {
-        // Convertir saltos de línea simples a dobles para mejor renderizado
-        return markdown.replaceAll("(?<=\\S)\n", "\n\n");
-    }
-
-    private void enableEditing(boolean enable) {
-        markdownEditor.setFocusable(enable);
-        markdownEditor.setFocusableInTouchMode(enable);
-        markdownEditor.setCursorVisible(enable);
-        if (enable) {
-            markdownEditor.requestFocus();
-            // Colocar cursor al final
-            markdownEditor.setSelection(markdownEditor.getText().length());
-        }
-    }
-
-//    private void processCurrentBlock() {
-//        try {
-//            String fullText = markdownEditor.getText().toString();
-//            int cursorPos = markdownEditor.getSelectionStart();
-//
-//            String renderedText = fullText.substring(0, lastRenderPosition);
-//            String newText = fullText.substring(lastRenderPosition);
-//
-//            Spanned newMarkdown = markwon.toMarkdown(newText);
-//
-//            SpannableStringBuilder finalText = new SpannableStringBuilder();
-//            finalText.append(renderedText);
-//            finalText.append(newMarkdown);
-//
-//            markwon.setParsedMarkdown(markdownEditor, finalText);
-//
-//            lastRenderPosition = cursorPos;
-//            markdownEditor.getText().insert(cursorPos, "\n");
-//            markdownEditor.setSelection(cursorPos + 1);
-//
-//        } catch (Exception e) {
-//            Log.e("MARKDOWN", "Error en bloques", e);
-//        }
-//    }
-
-    @Override
-    public boolean onNavigationItemSelected(@NonNull MenuItem item) {
-        int id = item.getItemId();
-
-        if (id == R.id.new_page) {
-            createNewPage();
-            return true;
-        } else if (id == R.id.export_pdf) {
-            exportCurrentPageToPdf();
-            return true;
-        } else if (id == R.id.back_to_notebooks) {
-            finish();
-            return true;
-        }
-
-        drawerLayout.closeDrawers();
-        return true;
-    }
-
-    private void createNewPage() {
-        Toast.makeText(this, "Nueva página creada", Toast.LENGTH_SHORT).show();
-    }
-
-    private void exportCurrentPageToPdf() {
-        String contentToExport;
-        if (isPreviewMode) {
-            // Si estamos en vista previa, usamos el original guardado
-            contentToExport = originalMarkdown;
-        } else {
-            // Si estamos editando, usamos el texto actual
-            contentToExport = markdownEditor.getText().toString();
-        }
-
-        String title = getIntent().getStringExtra("notebook_title");
-        PdfExporter.exportToPdf(this, title, contentToExport);
-    }
-
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == android.R.id.home) {
@@ -293,5 +307,11 @@ public class NotebookActivity extends AppCompatActivity implements NavigationVie
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void exportCurrentPageToPdf() {
+        String contentToExport = isPreviewMode ? originalMarkdown : markdownEditor.getText().toString();
+        String title = getIntent().getStringExtra("notebook_title");
+        PdfExporter.exportToPdf(this, title, contentToExport);
     }
 }
