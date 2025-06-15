@@ -1,96 +1,90 @@
 package upvictoria.pm_may_ago_2025.iti_271415.pi1u1.notion;
 
+import android.content.Intent;
 import android.os.Bundle;
-import android.text.Editable;
-import android.text.SpannableStringBuilder;
-import android.text.Spanned;
-import android.text.TextWatcher;
 import android.util.Log;
-import android.view.KeyEvent;
 import android.view.View;
-import android.widget.EditText;
+import android.widget.Button;
+import android.widget.Toast;
+
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-import io.noties.markwon.Markwon;
-import io.noties.markwon.editor.MarkwonEditor;
-import io.noties.markwon.ext.strikethrough.StrikethroughPlugin;
-import io.noties.markwon.ext.tasklist.TaskListPlugin;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+import com.google.android.material.textfield.TextInputEditText;
+import java.util.ArrayList;
+import java.util.List;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements NotebookAdapter.OnNotebookClickListener {
 
-    private EditText markdownEditor;
-    private Markwon markwon;
-    private MarkwonEditor markwonEditor;
-    private boolean isShiftPressed = false;
-    private int lastRenderPosition = 0;
+    private RecyclerView notebooksRecyclerView;
+    private NotebookAdapter notebookAdapter;
+    private List<Notebook> notebooks = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        markdownEditor = findViewById(R.id.markdownEditor);
+        notebooksRecyclerView = findViewById(R.id.notebooksRecyclerView);
+        notebooksRecyclerView.setLayoutManager(new LinearLayoutManager(this));
 
-        // Configurar Markwon
-        markwon = Markwon.builder(this)
-                .usePlugin(StrikethroughPlugin.create())
-                .usePlugin(TaskListPlugin.create(this))
-                .build();
+        notebookAdapter = new NotebookAdapter(notebooks, this);
+        notebooksRecyclerView.setAdapter(notebookAdapter);
 
-        markwonEditor = MarkwonEditor.create(markwon);
+        Button createNotebookButton = findViewById(R.id.createNotebookButton);
+        createNotebookButton.setOnClickListener(v -> showCreateNotebookDialog());
 
-        // Listener para Enter
-        markdownEditor.setOnKeyListener(new View.OnKeyListener() {
-            @Override
-            public boolean onKey(View v, int keyCode, KeyEvent event) {
-                if (keyCode == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_UP) {
-                    processCurrentBlock();
-                    return true;
-                }
-                return false;
-            }
-        });
-
-        // Listener para cambios
-        markdownEditor.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void afterTextChanged(Editable editable) {
-                // Auto-render para bloques de código
-                if (editable.toString().endsWith("```\n")) {
-                    processCurrentBlock();
-                }
-            }
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
-        });
+        Button exportPdfButton = findViewById(R.id.exportPdfButton);
+        exportPdfButton.setOnClickListener(v -> exportAllToPdf());
     }
 
-    private void processCurrentBlock() {
+    private void showCreateNotebookDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle(R.string.create_notebook);
+
+        View view = getLayoutInflater().inflate(R.layout.dialog_create_notebook, null);
+        TextInputEditText titleInput = view.findViewById(R.id.titleInput);
+
+        builder.setView(view);
+        builder.setPositiveButton(R.string.save, (dialog, which) -> {
+            String title = titleInput.getText().toString().trim();
+            if (!title.isEmpty()) {
+                Notebook notebook = new Notebook(title);
+                notebookAdapter.addNotebook(notebook);
+            }
+        });
+        builder.setNegativeButton(R.string.cancel, null);
+        builder.show();
+    }
+
+    private void exportAllToPdf() {
+        // exportar a pdf
+        PdfExporter.exportNotebooksToPdf(this, notebooks);
+    }
+
+    @Override
+    public void onNotebookClick(Notebook notebook) {
         try {
-            String fullText = markdownEditor.getText().toString();
-            int cursorPos = markdownEditor.getSelectionStart();
+            Log.d("MainActivity", "Abriendo cuaderno: " + notebook.getTitle());
 
-            // 1. Separar el texto
-            String renderedText = fullText.substring(0, lastRenderPosition);
-            String newText = fullText.substring(lastRenderPosition);
+            // perros idiotas de los logs
+            if (notebook == null) {
+                Toast.makeText(this, "Error: Cuaderno no válido", Toast.LENGTH_SHORT).show();
+                return;
+            }
 
-            // 2. Procesar solo el nuevo bloque
-            Spanned newMarkdown = markwon.toMarkdown(newText);
-
-            // 3. Crear el texto final CORREGIDO:
-            SpannableStringBuilder finalText = new SpannableStringBuilder();
-            finalText.append(renderedText); // Texto ya renderizado (como String)
-            finalText.append(newMarkdown);  // Nuevo texto formateado (como Spanned)
-
-            // 4. Aplicar el texto completo
-            markwon.setParsedMarkdown(markdownEditor, finalText);
-
-            // 5. Actualizar posición y añadir separación
-            lastRenderPosition = cursorPos;
-            markdownEditor.getText().insert(cursorPos, "\n");
-            markdownEditor.setSelection(cursorPos + 1);
-
+            Intent intent = new Intent(this, NotebookActivity.class);
+            intent.putExtra("notebook_id", notebook.getId());
+            intent.putExtra("notebook_title", notebook.getTitle());
+            try {
+                startActivity(intent);
+            } catch (Exception e) {
+                Log.e("MainActivity", "Error al iniciar NotebookActivity", e);
+                Toast.makeText(this, "Error al abrir el cuaderno", Toast.LENGTH_SHORT).show();
+            }
         } catch (Exception e) {
-            Log.e("MARKDOWN", "Error en bloques", e);
+            Log.e("MainActivity", "Error en onNotebookClick", e);
         }
     }
 }
