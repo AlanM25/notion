@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <group android:checkableBehavior="single">
+        <item
+            android:id="@+id/new_page"
+            android:title="@string/new_page"/>
+        <item
+            android:id="@+id/export_pdf"
+            android:title="@string/export_pdf"/>
+        <item
+            android:id="@+id/back_to_notebooks"
+            android:title="@string/back_to_notebooks"/>
+    </group>
+</menu>

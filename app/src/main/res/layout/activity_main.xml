@@ -1,23 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    tools:context=".MainActivity">
 
-    <EditText
-        android:id="@+id/markdownEditor"
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/notebooksRecyclerView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:inputType="textMultiLine|textNoSuggestions"
-        android:imeOptions="actionDone"
-        android:gravity="top|start"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="24dp"
-        android:paddingBottom="24dp"
-        android:textSize="16sp"
-        android:lineSpacingExtra="8dp"
-        android:scrollbars="vertical"
-        android:background="@android:color/transparent"/>
+        android:layout_above="@+id/buttonsLayout"
+        android:padding="8dp"/>
 
-</LinearLayout>
+    <LinearLayout
+        android:id="@+id/buttonsLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:orientation="horizontal"
+        android:padding="16dp">
+
+        <Button
+            android:id="@+id/createNotebookButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/create_notebook"
+            android:layout_marginEnd="8dp"/>
+
+        <Button
+            android:id="@+id/exportPdfButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/export_pdf"/>
+    </LinearLayout>
+
+</RelativeLayout>
