@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <EditText
+        android:id="@+id/markdownEditor"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:inputType="textMultiLine|textNoSuggestions"
+        android:imeOptions="actionDone"
+        android:gravity="top|start"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="24dp"
+        android:paddingBottom="24dp"
+        android:textSize="16sp"
+        android:lineSpacingExtra="8dp"
+        android:scrollbars="vertical"
+        android:background="@android:color/transparent"/>
+
+</LinearLayout>
