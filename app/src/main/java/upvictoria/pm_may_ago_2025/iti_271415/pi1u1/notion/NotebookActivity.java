@@ -10,6 +10,7 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.Toast;
@@ -32,9 +33,12 @@ public class NotebookActivity extends AppCompatActivity implements NavigationVie
     private Markwon markwon;
     private MarkwonEditor markwonEditor;
     private boolean isShiftPressed = false;
+    private boolean isPreviewMode = false;
+    private Button previewButton;
     private int lastRenderPosition = 0;
     private DrawerLayout drawerLayout;
     private NavigationView navigationView;
+    private String originalMarkdown;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,8 +54,12 @@ public class NotebookActivity extends AppCompatActivity implements NavigationVie
                 return;
             }
 
+            initMarkdownEditor();
+
             String notebookId = intent.getStringExtra("notebook_id");
             String notebookTitle = intent.getStringExtra("notebook_title");
+            originalMarkdown = "# " + notebookTitle + "\n\n";
+            markdownEditor.setText(originalMarkdown);
 
             if (notebookTitle == null || notebookTitle.isEmpty()) {
                 Log.e("NotebookActivity", "Título del cuaderno vacío");
@@ -61,7 +69,7 @@ public class NotebookActivity extends AppCompatActivity implements NavigationVie
 
             initToolbar(notebookTitle);
             initNavigationDrawer();
-            initMarkdownEditor();
+            setupPreviewButton();
 
         } catch (Exception e) {
             Log.e("NotebookActivity", "Error en onCreate", e);
@@ -123,64 +131,123 @@ public class NotebookActivity extends AppCompatActivity implements NavigationVie
                     .usePlugin(TaskListPlugin.create(this))
                     .build();
 
-            markwonEditor = MarkwonEditor.create(markwon);
+            //markwonEditor = MarkwonEditor.create(markwon);
 
             String notebookTitle = getIntent().getStringExtra("notebook_title");
             markdownEditor.setText("# " + notebookTitle + "\n\n");
 
-            setupEditorListeners();
+            //setupEditorListeners();
         } catch (Exception e) {
             Log.e("NotebookActivity", "Error al inicializar Markwon", e);
             showErrorAndFinish("Error al configurar el editor");
         }
     }
 
-    private void setupEditorListeners() {
-        markdownEditor.setOnKeyListener((v, keyCode, event) -> {
-            if (keyCode == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_UP) {
-                processCurrentBlock();
-                return true;
-            }
-            return false;
-        });
+//    private void setupEditorListeners() {
+//        markdownEditor.setOnKeyListener((v, keyCode, event) -> {
+//            if (keyCode == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_UP) {
+//                processCurrentBlock();
+//                return true;
+//            }
+//            return false;
+//        });
+//
+//        markdownEditor.addTextChangedListener(new TextWatcher() {
+//            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+//            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+//
+//            @Override
+//            public void afterTextChanged(Editable editable) {
+//                if (editable.toString().endsWith("```\n")) {
+//                    processCurrentBlock();
+//                }
+//            }
+//        });
+//    }
 
-        markdownEditor.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+    private void setupPreviewButton() {
+        previewButton = findViewById(R.id.previewButton);
+        if (previewButton == null) {
+            return;
+        }
 
-            @Override
-            public void afterTextChanged(Editable editable) {
-                if (editable.toString().endsWith("```\n")) {
-                    processCurrentBlock();
-                }
-            }
-        });
+        previewButton.setOnClickListener(v -> togglePreview());
     }
 
-    private void processCurrentBlock() {
-        try {
-            String fullText = markdownEditor.getText().toString();
-            int cursorPos = markdownEditor.getSelectionStart();
+    private void togglePreview() {
+        if (isPreviewMode) {
+            // Volver a modo edición
+            markdownEditor.setText(originalMarkdown);
+            previewButton.setText(R.string.preview);
+            enableEditing(true);
+        } else {
+            // Entrar en modo vista previa
+            originalMarkdown = cleanMarkdownContent(markdownEditor.getText().toString());
+            String processedMarkdown = prepareForPreview(originalMarkdown);
 
-            String renderedText = fullText.substring(0, lastRenderPosition);
-            String newText = fullText.substring(lastRenderPosition);
+            Spanned markdownSpanned = markwon.toMarkdown(processedMarkdown);
+            markdownEditor.setText(markdownSpanned);
+            previewButton.setText(R.string.edit);
+            enableEditing(false);
+        }
+        isPreviewMode = !isPreviewMode;
+    }
 
-            Spanned newMarkdown = markwon.toMarkdown(newText);
+    private String cleanMarkdownContent(String content) {
+        // 1. Normalizar espacios alrededor de formatos
+        content = content.replaceAll("\\*\\*(\\s+)", "**$1")
+                .replaceAll("(\\s+)\\*\\*", "$1**")
+                .replaceAll("\\*(\\s+)", "*$1")
+                .replaceAll("(\\s+)\\*", "$1*");
 
-            SpannableStringBuilder finalText = new SpannableStringBuilder();
-            finalText.append(renderedText);
-            finalText.append(newMarkdown);
+        // 2. Limpiar espacios en saltos de línea
+        content = content.replaceAll("\\s+\\n", "\n")
+                .replaceAll("\n\\s+", "\n");
 
-            markwon.setParsedMarkdown(markdownEditor, finalText);
+        // 3. Asegurar doble espacio para saltos de línea simples
+        return content.replaceAll("(?<=\\S)\n", "  \n");
+    }
 
-            lastRenderPosition = cursorPos;
-            markdownEditor.getText().insert(cursorPos, "\n");
-            markdownEditor.setSelection(cursorPos + 1);
+    private String prepareForPreview(String markdown) {
+        // Convertir saltos de línea simples a dobles para mejor renderizado
+        return markdown.replaceAll("(?<=\\S)\n", "\n\n");
+    }
 
-        } catch (Exception e) {
-            Log.e("MARKDOWN", "Error en bloques", e);
+    private void enableEditing(boolean enable) {
+        markdownEditor.setFocusable(enable);
+        markdownEditor.setFocusableInTouchMode(enable);
+        markdownEditor.setCursorVisible(enable);
+        if (enable) {
+            markdownEditor.requestFocus();
+            // Colocar cursor al final
+            markdownEditor.setSelection(markdownEditor.getText().length());
         }
     }
+
+//    private void processCurrentBlock() {
+//        try {
+//            String fullText = markdownEditor.getText().toString();
+//            int cursorPos = markdownEditor.getSelectionStart();
+//
+//            String renderedText = fullText.substring(0, lastRenderPosition);
+//            String newText = fullText.substring(lastRenderPosition);
+//
+//            Spanned newMarkdown = markwon.toMarkdown(newText);
+//
+//            SpannableStringBuilder finalText = new SpannableStringBuilder();
+//            finalText.append(renderedText);
+//            finalText.append(newMarkdown);
+//
+//            markwon.setParsedMarkdown(markdownEditor, finalText);
+//
+//            lastRenderPosition = cursorPos;
+//            markdownEditor.getText().insert(cursorPos, "\n");
+//            markdownEditor.setSelection(cursorPos + 1);
+//
+//        } catch (Exception e) {
+//            Log.e("MARKDOWN", "Error en bloques", e);
+//        }
+//    }
 
     @Override
     public boolean onNavigationItemSelected(@NonNull MenuItem item) {
@@ -206,9 +273,17 @@ public class NotebookActivity extends AppCompatActivity implements NavigationVie
     }
 
     private void exportCurrentPageToPdf() {
-        String content = markdownEditor.getText().toString();
+        String contentToExport;
+        if (isPreviewMode) {
+            // Si estamos en vista previa, usamos el original guardado
+            contentToExport = originalMarkdown;
+        } else {
+            // Si estamos editando, usamos el texto actual
+            contentToExport = markdownEditor.getText().toString();
+        }
+
         String title = getIntent().getStringExtra("notebook_title");
-        PdfExporter.exportToPdf(this, title, content);
+        PdfExporter.exportToPdf(this, title, contentToExport);
     }
 
     @Override

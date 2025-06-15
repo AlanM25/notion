@@ -19,8 +19,8 @@ public class PdfExporter {
             Toast.makeText(context, "Datos inválidos para exportar", Toast.LENGTH_SHORT).show();
             return;
         }
-
-        String htmlContent = convertMarkdownToHtml(content);
+        String cleanContent = content.replaceAll("  \n", "\n\n");
+        String htmlContent = convertMarkdownToHtml(cleanContent);
         createWebViewForPdf(context, title, htmlContent);
     }
 
@@ -97,37 +97,27 @@ public class PdfExporter {
             return "";
         }
 
-        String html = markdown.replaceAll("```([\\s\\S]*?)```", "<pre><code>$1</code></pre>");
+        // Procesar saltos de línea primero (dos espacios + salto de línea para <br>)
+        String html = markdown.replaceAll("  \n", "<br>");
 
-        // Procesar encabezados
-        html = html
-                .replaceAll("(?m)^######\\s+(.*?)\\s*$", "<h6>$1</h6>")
-                .replaceAll("(?m)^#####\\s+(.*?)\\s*$", "<h5>$1</h5>")
-                .replaceAll("(?m)^####\\s+(.*?)\\s*$", "<h4>$1</h4>")
-                .replaceAll("(?m)^###\\s+(.*?)\\s*$", "<h3>$1</h3>")
-                .replaceAll("(?m)^##\\s+(.*?)\\s*$", "<h2>$1</h2>")
-                .replaceAll("(?m)^#\\s+(.*?)\\s*$", "<h1>$1</h1>");
+        // Bloques de código
+        html = html.replaceAll("```([\\s\\S]*?)```", "<pre><code>$1</code></pre>");
 
-        // Procesar formatos de texto
-        html = html
-                .replaceAll("\\*\\*(.*?)\\*\\*", "<strong>$1</strong>")
-                .replaceAll("__(.*?)__", "<strong>$1</strong>")
-                .replaceAll("\\*(.*?)\\*", "<em>$1</em>")
-                .replaceAll("_(.*?)_", "<em>$1</em>")
-                .replaceAll("`(.*?)`", "<code>$1</code>");
+        // Encabezados
+        html = html.replaceAll("(?m)^#\\s+(.*?)\\s*$", "<h1>$1</h1>")
+                .replaceAll("(?m)^##\\s+(.*?)\\s*$", "<h2>$1</h2>");
 
-        // Procesar saltos de línea y párrafos
-        html = html
-                .replaceAll("(\\r?\\n){2,}", "</p><p>")
-                .replaceAll("\\r?\\n", "<br>");
+        // Negritas y cursivas (con mejor manejo de espacios)
+        html = html.replaceAll("\\*\\*(\\S(.*?)\\S)\\*\\*(?!\\*)", "<strong>$1</strong>")
+                .replaceAll("\\*(\\S(.*?)\\S)\\*(?!\\*)", "<em>$1</em>");
 
-        // Asegurar que el texto esté envuelto en párrafos
-        if (!html.startsWith("<p>") && !html.startsWith("<h") && !html.startsWith("<pre>")) {
-            html = "<p>" + html;
-        }
-        if (!html.endsWith("</p>") && !html.endsWith("</h") && !html.endsWith("</pre>")) {
-            html = html + "</p>";
-        }
+        // Listas
+        html = html.replaceAll("(?m)^-\\s+(.*?)$", "<li>$1</li>")
+                .replaceAll("(?m)(<li>.*</li>)", "<ul>$1</ul>");
+
+        // Párrafos (manejo más inteligente)
+        html = html.replaceAll("(?m)^([^<\\n].*?)$", "<p>$1</p>")
+                .replaceAll("<p>\\s*</p>", ""); // Eliminar párrafos vacíos
 
         return html;
     }

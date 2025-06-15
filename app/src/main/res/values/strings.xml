@@ -9,4 +9,6 @@
     <string name="page_title_hint">Título de la página</string>
     <string name="save">Guardar</string>
     <string name="cancel">Cancelar</string>
+    <string name="preview">Vista previa</string>
+    <string name="edit">Editar</string>
 </resources>
