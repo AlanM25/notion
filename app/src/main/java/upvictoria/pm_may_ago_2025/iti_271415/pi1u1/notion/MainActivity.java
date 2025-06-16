@@ -75,7 +75,7 @@ public class MainActivity extends AppCompatActivity implements NotebookAdapter.O
 
     private void exportAllToPdf() {
         // exportar a pdf
-        PdfExporter.exportNotebooksToPdf(this, notebooks);
+        PdfExporter.exportNotebooksToPdf(this, notebooks, databaseRepository);
     }
 
     @Override

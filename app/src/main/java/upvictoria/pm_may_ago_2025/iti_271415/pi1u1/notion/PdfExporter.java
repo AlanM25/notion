@@ -27,10 +27,6 @@ public class PdfExporter {
     private static void createWebViewForPdf(Context context, String title, String htmlContent) {
         WebView webView = new WebView(context);
         webView.setWebViewClient(new WebViewClient() {
-            public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                return false;
-            }
-
             @Override
             public void onPageFinished(WebView view, String url) {
                 createWebPrintJob(view, context, title);
@@ -39,17 +35,13 @@ public class PdfExporter {
 
         String htmlDoc = "<!DOCTYPE html>" +
                 "<html><head>" +
-                "<meta charset=\"UTF-8\">" +
+                "<meta charset='UTF-8'>" +
                 "<title>" + title + "</title>" +
                 "<style>" +
-                "body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; }" +
-                "h1 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }" +
-                "h2 { color: #34495e; }" +
-                "h3 { color: #7f8c8d; }" +
-                "pre { background: #f5f5f5; padding: 10px; border-radius: 5px; overflow-x: auto; }" +
-                "code { background: #f5f5f5; padding: 2px 5px; border-radius: 3px; }" +
-                "strong { font-weight: bold; }" +
-                "em { font-style: italic; }" +
+                "body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }" +
+                "h1 { color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 10px; }" +
+                "h2 { color: #34495e; margin-top: 25px; }" +
+                ".page-content { background: #f8f9fa; padding: 15px; border-radius: 4px; margin: 10px 0; }" +
                 "</style>" +
                 "</head><body>" + htmlContent + "</body></html>";
 
@@ -73,53 +65,46 @@ public class PdfExporter {
         }
     }
 
-    public static void exportNotebooksToPdf(Context context, List<Notebook> notebooks) {
+    public static void exportNotebooksToPdf(Context context, List<Notebook> notebooks, DatabaseRepository repository) {
         if (notebooks == null || notebooks.isEmpty()) {
             Toast.makeText(context, "No hay cuadernos para exportar", Toast.LENGTH_SHORT).show();
             return;
         }
 
         StringBuilder content = new StringBuilder();
-        content.append("# Todos mis cuadernos\n\n");
+        content.append("# Listado de Cuadernos\n\n");
 
         for (Notebook notebook : notebooks) {
-            content.append("## ").append(notebook.getTitle()).append("\n\n");
-            if (notebook.getContent() != null) {
-                content.append(notebook.getContent()).append("\n\n---\n\n");
+            // Título del cuaderno
+            content.append("## ").append(notebook.getTitle()).append("\n");
+
+            // Obtener páginas del cuaderno
+            List<Page> pages = repository.getPagesByNotebook(notebook.getId());
+
+            if (pages != null && !pages.isEmpty()) {
+                content.append("**Páginas:**\n");
+                for (Page page : pages) {
+                    content.append("- ").append(page.getTitle()).append("\n");
+                }
+            } else {
+                content.append("_No contiene páginas_\n");
             }
+            content.append("\n"); // Espacio entre cuadernos
         }
 
-        exportToPdf(context, "Todos mis cuadernos", content.toString());
+        exportToPdf(context, "Listado de Cuadernos", content.toString());
     }
 
     private static String convertMarkdownToHtml(String markdown) {
-        if (markdown == null || markdown.isEmpty()) {
-            return "";
-        }
+        if (markdown == null || markdown.isEmpty()) return "";
 
-        // Procesar saltos de línea primero (dos espacios + salto de línea para <br>)
-        String html = markdown.replaceAll("  \n", "<br>");
-
-        // Bloques de código
-        html = html.replaceAll("```([\\s\\S]*?)```", "<pre><code>$1</code></pre>");
-
-        // Encabezados
-        html = html.replaceAll("(?m)^#\\s+(.*?)\\s*$", "<h1>$1</h1>")
-                .replaceAll("(?m)^##\\s+(.*?)\\s*$", "<h2>$1</h2>");
-
-        // Negritas y cursivas (con mejor manejo de espacios)
-        html = html.replaceAll("\\*\\*(\\S(.*?)\\S)\\*\\*(?!\\*)", "<strong>$1</strong>")
-                .replaceAll("\\*(\\S(.*?)\\S)\\*(?!\\*)", "<em>$1</em>");
-
-        // Listas
-        html = html.replaceAll("(?m)^-\\s+(.*?)$", "<li>$1</li>")
-                .replaceAll("(?m)(<li>.*</li>)", "<ul>$1</ul>");
-
-        // Párrafos (manejo más inteligente)
-        html = html.replaceAll("(?m)^([^<\\n].*?)$", "<p>$1</p>")
-                .replaceAll("<p>\\s*</p>", ""); // Eliminar párrafos vacíos
-
-        return html;
+        return markdown
+                .replaceAll("(?m)^#\\s+(.+)$", "<h1 style='color:#2c3e50;'>$1</h1>")
+                .replaceAll("(?m)^##\\s+(.+)$", "<h2 style='color:#34495e;margin-top:15px;'>$1</h2>")
+                .replaceAll("(?m)^-\\s+(.+)$", "<li style='margin-left:20px;'>$1</li>")
+                .replaceAll("(?m)^\\*\\*(.+?)\\*\\*", "<strong>$1</strong>")
+                .replaceAll("(?m)^_(.+?)_", "<em>$1</em>")
+                .replaceAll("\n", "<br>");
     }
 
     public static void saveAsPdf(Context context, String title, String content, String filename) {

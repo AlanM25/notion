@@ -183,14 +183,37 @@ public class NotebookActivity extends AppCompatActivity implements NavigationVie
             List<Page> pages = databaseRepository.getPagesByNotebook(currentNotebookId);
             runOnUiThread(() -> {
                 Menu menu = navigationView.getMenu();
-                menu.clear();
 
+                // 1. Limpiar SOLO el grupo de páginas dinámicas
+                MenuItem dynamicGroup = menu.findItem(R.id.dynamic_pages);
+                if (dynamicGroup != null) {
+                    menu.removeGroup(R.id.dynamic_pages);
+                } else {
+                    // Si no existe el grupo, limpiar cualquier ítem dinámico previo
+                    for (int i = menu.size() - 1; i >= 0; i--) {
+                        MenuItem item = menu.getItem(i);
+                        if (item.getGroupId() != R.id.fixed_menu) {
+                            menu.removeItem(item.getItemId());
+                        }
+                    }
+                }
+
+                // 2. Agregar páginas con IDs únicos basados en su posición
                 for (int i = 0; i < pages.size(); i++) {
-                    menu.add(0, i, i, pages.get(i).getTitle())
+                    menu.add(R.id.dynamic_pages, i, Menu.NONE, pages.get(i).getTitle())
+                            .setIcon(R.drawable.ic_page)
                             .setCheckable(true);
                 }
 
-                menu.add(0, -1, pages.size(), "Nueva página");
+                // 3. Marcar la página actual como seleccionada
+                if (currentPageId != null) {
+                    for (int i = 0; i < pages.size(); i++) {
+                        if (pages.get(i).getId().equals(currentPageId)) {
+                            menu.getItem(i + 3).setChecked(true); // +3 por los ítems fijos
+                            break;
+                        }
+                    }
+                }
             });
         }).start();
     }
@@ -199,39 +222,71 @@ public class NotebookActivity extends AppCompatActivity implements NavigationVie
     public boolean onNavigationItemSelected(@NonNull MenuItem item) {
         int id = item.getItemId();
 
+        // Manejar ítems fijos
+        if (id == R.id.new_page) {
+            createNewPage();
+            drawerLayout.closeDrawers();
+            return true;
+        } else if (id == R.id.export_pdf) {
+            exportCurrentPageToPdf();
+            drawerLayout.closeDrawers();
+            return true;
+        } else if (id == R.id.back_to_notebooks) {
+            finish();
+            return true;
+        }
+
+        // Manejar páginas dinámicas
         saveCurrentPage(() -> {
-            if (id == -1) {
-                createNewPage();
-            } else {
-                loadPageById(id);
-            }
+            int position = item.getItemId(); // Usamos el ID como posición
+            loadPageById(position);
         });
 
         drawerLayout.closeDrawers();
         return true;
     }
 
+    private void loadDynamicPage(int position) {
+        new Thread(() -> {
+            List<Page> pages = databaseRepository.getPagesByNotebook(currentNotebookId);
+            if (position >= 0 && position < pages.size()) {
+                Page page = pages.get(position);
+                runOnUiThread(() -> {
+                    currentPageId = page.getId();
+                    if (isPreviewMode) {
+                        originalMarkdown = page.getContent();
+                        markdownEditor.setText(markwon.toMarkdown(prepareForPreview(originalMarkdown)));
+                    } else {
+                        markdownEditor.setText(page.getContent());
+                    }
+                });
+            }
+        }).start();
+    }
+
     private void createNewPage() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Nueva página");
-
         View view = getLayoutInflater().inflate(R.layout.dialog_create_notebook, null);
         TextInputEditText titleInput = view.findViewById(R.id.titleInput);
-
         builder.setView(view);
+
         builder.setPositiveButton("Crear", (dialog, which) -> {
             String title = titleInput.getText().toString().trim();
             if (!title.isEmpty()) {
-                Page newPage = new Page(title, currentNotebookId);
-                databaseRepository.addPage(newPage);
-                currentPageId = newPage.getId();
-                isNewPage = true;
-                markdownEditor.setText(newPage.getContent());
-                loadPagesIntoNavigationDrawer();
-                Toast.makeText(this, "Página creada", Toast.LENGTH_SHORT).show();
+                new Thread(() -> {
+                    Page newPage = new Page(title, currentNotebookId);
+                    databaseRepository.addPage(newPage);
+
+                    runOnUiThread(() -> {
+                        currentPageId = newPage.getId();
+                        markdownEditor.setText(newPage.getContent());
+                        loadPagesIntoNavigationDrawer(); // Actualiza el menú
+                        Toast.makeText(this, "Página creada", Toast.LENGTH_SHORT).show();
+                    });
+                }).start();
             }
         });
-        builder.setNegativeButton("Cancelar", null);
         builder.show();
     }
 
@@ -240,7 +295,22 @@ public class NotebookActivity extends AppCompatActivity implements NavigationVie
             List<Page> pages = databaseRepository.getPagesByNotebook(currentNotebookId);
             if (position >= 0 && position < pages.size()) {
                 Page page = pages.get(position);
-                runOnUiThread(() -> loadPage(page));
+                runOnUiThread(() -> {
+                    currentPageId = page.getId();
+
+                    if (isPreviewMode) {
+                        originalMarkdown = page.getContent();
+                        markdownEditor.setText(markwon.toMarkdown(prepareForPreview(originalMarkdown)));
+                    } else {
+                        markdownEditor.setText(page.getContent());
+                    }
+
+                    // Actualizar selección en el menú
+                    Menu menu = navigationView.getMenu();
+                    for (int i = 0; i < menu.size(); i++) {
+                        menu.getItem(i).setChecked(menu.getItem(i).getItemId() == position);
+                    }
+                });
             }
         }).start();
     }
